@@ -77,7 +77,7 @@
     - MO and playfield position offsets are guesses
     - pixie RAM (corner rounding of playfield pixels) is not emulated
     - cocktail flip is not emulated
-    - playfield ROMs are rebuilt from Atari's PPS artwork, not dumps
+    - playfield ROMs are rebuilt from Atari's PPS artwork, not dumps.
 
 ***************************************************************************/
 
