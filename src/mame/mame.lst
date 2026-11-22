@@ -2616,6 +2616,11 @@ offtwallc
 @source:atari/orbit.cpp
 orbit
 
+@source:atari/peterpakt.cpp
+peterpakt
+peterpakta
+peterpakts
+
 @source:atari/pofo.cpp
 pofo
 pofo2
@@ -2647,6 +2652,15 @@ rampartj
 relief
 relief2
 relief3
+
+@source:atari/roadrunr.cpp
+roadrunr
+roadrunr84
+roadrunr84a
+roadrunr84b
+roadrunra
+roadrunrf
+roadrunrnd
 
 @source:atari/runaway.cpp
 qwak
