@@ -10,9 +10,9 @@
     from the original VAX development files ([LOGG.RUNNER]): the program
     sources (RRDEF.MAC holds the hardware equates), the hardware memo
     SPEC.DOC, the priority PROM equations PRIOR.ROM, and the linked load
-    (.LDA) files.  No PCB is known to exist, so ROM chip placement and some
-    video timing details are educated guesses.  The program/sound ROM images
-    are the archived LDA files cut into 27128-sized pieces.
+    (.LDA) files.  PCB's are out there, but none have been documented fully 
+	so ROM chip placement and some video timing details are educated guesses.  
+	The program/sound ROM images are the archived LDA files cut into 27128-sized pieces.
 
     Two hardware revisions appear in the files:
 
