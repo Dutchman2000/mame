@@ -51,7 +51,7 @@
     TODO:
     - everything that needs a real board to confirm: exact pixel offsets,
       sound IRQ source/rate, sound volume registers, MO V/H reflect details
-    - laserdisc: no disc has ever been found (NO_DUMP); without a disc the
+    - laserdisc: no disc dumps are available (NO_DUMP); without a disc the
       player is reported as not operational so the game runs on graphics only
     - joystick calibration lives in NOVRAM; go through self test once
 
