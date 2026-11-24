@@ -2215,7 +2215,12 @@ ssprints
 
 @source:atari/atarisy4.cpp
 airrace
+airracef
 laststar
+laststara
+laststarf
+laststaro
+laststart
 
 @source:atari/atarittl.cpp
 antiairc
@@ -2620,6 +2625,7 @@ orbit
 peterpakt
 peterpakta
 peterpakts
+peterpaktv
 
 @source:atari/pofo.cpp
 pofo
@@ -2653,14 +2659,14 @@ relief
 relief2
 relief3
 
-@source:atari/roadrunr.cpp
-roadrunr
-roadrunr84
-roadrunr84a
-roadrunr84b
-roadrunra
-roadrunrf
-roadrunrnd
+@source:atari/roadrunld.cpp
+roadrunld
+roadrunld84
+roadrunld84a
+roadrunld84b
+roadrunlda
+roadrunldf
+roadrunldnd
 
 @source:atari/runaway.cpp
 qwak
