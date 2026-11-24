@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ken Van Mersbergen (Dutchman2000)
+// copyright-holders:Ken Van Mersbergen (Dutchman200)
 /***************************************************************************
 
     Peter Pack Rat - T11 prototype
@@ -58,7 +58,7 @@
     1800-18FF  quad POKEY, chip selects are A4-A7 active low:
                18E0 POKEY 0, 18D0 POKEY 1, 18B0 POKEY 2, 1870 POKEY 3
     2000       R: D0-D2 coins (right/left/aux, active low)
-                  D4 speech ready (code exists, no speech data in ROM)
+                  D4 TI speech chip /READY
                   D5 self test (active low)
                   D6 0 = byte waiting from T11
                   D7 1 = T11 has taken our last byte
@@ -71,13 +71,27 @@
     3500       W: speech data
     4000-FFFF  ROM
 
+    TI speech chip (TMS5220): the sound program is built with RPMTLK
+    (...TLK = 1) and the vocabulary PRVOC.MAC is in the sound ROM at 7437
+    ("I'M A PACKRAT..." sung in four phrases, "PACKRAT!", and a leftover
+    "JEDI HURRY HAN" test phrase). Sound commands 0x41-0x45 say phrases
+    0-4, 0x48 the test phrase. The theme music (S$THEME) speaks the phrases
+    itself unless voices are switched off (S$KVOICE / S$VOICE), and every
+    place the T11 starts the theme (INSTR.C, MSETUP.C) sends S$KVOICE
+    right after it, so the game never sings in this build.
+    peterpaktv is the source build with those two calls changed to
+    S$VOICE (sound command 0x49, CLRFL in PRSLV.MAC), so the theme sings
+    on the instructions and level select screens (play itself switches to
+    the background music and S$KVOICE). It differs from peterpakts in two
+    bytes.
+
     Known gaps / guesses
     - screen size 288x240 is from the game's scroll limits and the alpha
       layout; pixel clock and blanking are typical Atari values
     - MO and playfield position offsets are guesses
     - pixie RAM (corner rounding of playfield pixels) is not emulated
     - cocktail flip is not emulated
-    - playfield ROMs are rebuilt from Atari's PPS artwork, not dumps.
+    - playfield ROMs are rebuilt from Atari's PPS artwork, not dumps
 
 ***************************************************************************/
 
@@ -88,6 +102,7 @@
 #include "machine/nvram.h"
 #include "machine/timer.h"
 #include "sound/pokey.h"
+#include "sound/tms5220.h"
 
 #include "emupal.h"
 #include "screen.h"
@@ -107,6 +122,7 @@ public:
 		m_palette(*this, "palette"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_pokey(*this, "pokey%u", 0U),
+		m_tms(*this, "tms"),
 		m_rombank(*this, "rombank"),
 		m_cpram(*this, "cpram"),
 		m_pfram(*this, "pfram"),
@@ -117,7 +133,7 @@ public:
 		m_led(*this, "led0")
 	{ }
 
-	void peterpakt(machine_config &config);
+	void peterpakt(machine_config &config) ATTR_COLD;
 
 	int outflag_r() { return m_to6502_full ? 0 : 1; }
 	int inflag_r() { return m_from6502_full ? 0 : 1; }
@@ -133,6 +149,7 @@ private:
 	required_device<palette_device> m_palette;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device_array<pokey_device, 4> m_pokey;
+	required_device<tms5220_device> m_tms;
 	required_memory_bank m_rombank;
 	required_shared_ptr<u16> m_cpram;
 	required_shared_ptr<u16> m_pfram;
@@ -297,7 +314,9 @@ void peterpakt_state::cpram_w(offs_t offset, u16 data, u16 mem_mask)
 
 u8 peterpakt_state::sound_status_r()
 {
-	u8 result = m_in1->read() & 0x1f;
+	u8 result = m_in1->read() & 0x0f;
+	if (m_tms->readyq_r())
+		result |= 0x10;     // D4 = TI speech /READY
 	if (BIT(m_in0->read(), 6))
 		result |= 0x20;     // D5 = self test switch, shared with the T11
 	if (!m_to6502_full)
@@ -337,7 +356,9 @@ void peterpakt_state::sound_irq_ack_w(u8 data)
 void peterpakt_state::sound_latch_w(offs_t offset, u8 data)
 {
 	// 3400-3407: coin counters, LEDs and speech control (D7 of each)
-	if (offset == 6 || offset == 7)
+	if (offset == 5)
+		m_tms->wsq_w(BIT(data, 7));     // SPWRON/SPWROF: 0 = write strobe on
+	else if (offset == 6 || offset == 7)
 		machine().bookkeeping().coin_counter_w(offset - 6, BIT(data, 7));
 }
 
@@ -468,7 +489,7 @@ void peterpakt_state::sound_map(address_map &map)
 	map(0x3200, 0x3200).mirror(0x00ff).w(FUNC(peterpakt_state::sound_ack_w));
 	map(0x3300, 0x3300).mirror(0x00ff).w(FUNC(peterpakt_state::sound_data_w));
 	map(0x3400, 0x3407).mirror(0x00f8).w(FUNC(peterpakt_state::sound_latch_w));
-	map(0x3500, 0x3500).mirror(0x00ff).nopw();     // speech data (no speech in this build)
+	map(0x3500, 0x3500).mirror(0x00ff).w(m_tms, FUNC(tms5220_device::data_w));     // SPDATA
 	map(0x4000, 0xffff).rom();
 }
 
@@ -505,7 +526,7 @@ static INPUT_PORTS_START( peterpakt )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_COIN2 )     // left
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_COIN3 )     // aux
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )    // speech ready (no chip)
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )    // TI speech /READY, read from the chip
 	PORT_BIT( 0xe0, IP_ACTIVE_HIGH, IPT_UNUSED )    // D5 self test (from IN0), D6/D7 talk flags
 INPUT_PORTS_END
 
@@ -573,7 +594,6 @@ GFXDECODE_END
 
 void peterpakt_state::machine_start()
 {
-
 	m_rombank->configure_entries(0, 5, memregion("maincpu")->base() + 0x6000, 0x2000);
 	m_vblank_off_timer = timer_alloc(FUNC(peterpakt_state::vblank_off), this);
 
@@ -591,6 +611,9 @@ void peterpakt_state::machine_start()
 
 void peterpakt_state::machine_reset()
 {
+	m_tms->rsq_w(1);
+	m_tms->wsq_w(1);
+
 	m_outlatch = 0;
 	m_rombank->set_entry(0);
 	m_vblank_irq = false;
@@ -631,6 +654,12 @@ void peterpakt_state::peterpakt(machine_config &config)
 		POKEY(config, m_pokey[i], VIDEO_CLOCK / 8);
 		m_pokey[i]->add_route(ALL_OUTPUTS, "mono", 0.50);
 	}
+
+	// TI speech chip (RPMTLK.MAC, RPMDEF.MAC: SPDATA 3500, write strobe
+	// 3405, /READY on 2000 D4). The clock isn't documented; this is the
+	// 14.318 MHz / 2 / 11 Atari used for the TMS5220 on later boards.
+	TMS5220(config, m_tms, VIDEO_CLOCK / 2 / 11);
+	m_tms->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -820,9 +849,70 @@ ROM_START( peterpakts )
 	ROM_LOAD( "pakrat_gfx_bank9_obj_hi.bin", 0x64000, 0x4000, CRC(83544432) SHA1(575c318357afffbf4bbfe64ecf6470d9bb88b47a) )
 ROM_END
 
+ROM_START( peterpaktv )
+	ROM_REGION( 0x10000, "maincpu", 0 )    // as peterpakts, with INSTR.C and MSETUP.C sending S$VOICE instead of S$KVOICE
+	ROM_LOAD16_BYTE( "pakrat_sing_rom0_lo.bin", 0x0000, 0x4000, CRC(81305a17) SHA1(ee210817fd4117b16315d69f2a2a1d45c05c0445) )
+	ROM_LOAD16_BYTE( "pakrat_src_rom0_hi.bin", 0x0001, 0x4000, CRC(858db3c5) SHA1(469a72a4f2bc479e3155762126c46ab3e1d9a1a5) )
+	ROM_LOAD16_BYTE( "pakrat_sing_rom1_lo.bin", 0x8000, 0x4000, CRC(653264b6) SHA1(ea5330a70d3b5383fa816201b7890f6943f4fecf) )
+	ROM_LOAD16_BYTE( "pakrat_src_rom1_hi.bin", 0x8001, 0x4000, CRC(59efd482) SHA1(47a4d264951b2733a376f5093d8634fb7e9c9a80) )
+
+	ROM_REGION( 0x10000, "audiocpu", 0 )   // 6502 code (HOST2 build)
+	ROM_LOAD( "pakaudio-4k.bin", 0x04000, 0x4000, CRC(61b5ecaa) SHA1(22eedb837a09d8adb54310cc1479d38ccac0d36d) )
+	ROM_LOAD( "pakaudio-8k.bin", 0x08000, 0x4000, CRC(aeabb55a) SHA1(3e3558ac3b580b9dff0c21c525797a963cf32eaa) )
+	ROM_LOAD( "pakaudio-ck.bin", 0x0c000, 0x4000, CRC(34a0442b) SHA1(8e4a7e899209a2030b94986bb247942f516716a0) )
+
+	ROM_REGION( 0x1000, "alpha", 0 )
+	ROM_LOAD( "pakrat_alpha_numeric.bin", 0x00000, 0x1000, CRC(4efea8f4) SHA1(5296d28c6a6238ebd50a0d226c927492aef2292d) )
+
+	ROM_REGION( 0x80000, "pf", ROMREGION_ERASE00 )  // rebuilt from Atari's PPS artwork (NSEWER, NTREE, NJUNK)
+	ROM_LOAD( "pakrat_pf_rom02_sewer_lo.bin", 0x08000, 0x4000, CRC(64c2406e) SHA1(c01c69fbe60853c6c39c16dde832773b61cd78cd) )
+	ROM_LOAD( "pakrat_pf_rom03_sewer_lo.bin", 0x0c000, 0x4000, CRC(b32af37f) SHA1(6f643cda5e59ee52bc547ec747fdd4e19b71505d) )
+	ROM_LOAD( "pakrat_pf_rom04_sewer_lo.bin", 0x10000, 0x4000, CRC(58d3d974) SHA1(e7d67fee7c1121be545833dd475d02047bf1a8f0) )
+	ROM_LOAD( "pakrat_pf_rom05_sewer_lo.bin", 0x14000, 0x4000, CRC(62509fef) SHA1(9de14e6f344be63fd91894773e9bb7017dd3c65c) )
+	ROM_LOAD( "pakrat_pf_rom06_tree_lo.bin", 0x18000, 0x4000, CRC(bbcc02c8) SHA1(4d5824a87449374966674b37e427798816b5ab0e) )
+	ROM_LOAD( "pakrat_pf_rom07_tree_lo.bin", 0x1c000, 0x4000, CRC(cc539314) SHA1(4d32df367d535e7d8ca39c30bcb61fc24484c47d) )
+	ROM_LOAD( "pakrat_pf_rom08_tree_lo.bin", 0x20000, 0x4000, CRC(d94f76b2) SHA1(c2c1a026d46cb8d4a830fdaf50c3d56031053c22) )
+	ROM_LOAD( "pakrat_pf_rom09_tree_lo.bin", 0x24000, 0x4000, CRC(1eeac93c) SHA1(cd9571fc1eda4f60d987dd90dcff779ec57c6f40) )
+	ROM_LOAD( "pakrat_pf_rom10_junk_lo.bin", 0x28000, 0x4000, CRC(dd38ce64) SHA1(618702566015d065d7e2f58695151db511960bac) )
+	ROM_LOAD( "pakrat_pf_rom11_junk_lo.bin", 0x2c000, 0x4000, CRC(339fcd0b) SHA1(7307a0ce06b392734c8253269f089439172d3f46) )
+	ROM_LOAD( "pakrat_pf_rom02_sewer_hi.bin", 0x48000, 0x4000, CRC(8fb51b80) SHA1(e328520ddfd9048c0b435c2bd783928e70428507) )
+	ROM_LOAD( "pakrat_pf_rom03_sewer_hi.bin", 0x4c000, 0x4000, CRC(cea90ba0) SHA1(f4814bc89ce0a9079ad296cfbb8e4aba0b276eef) )
+	ROM_LOAD( "pakrat_pf_rom04_sewer_hi.bin", 0x50000, 0x4000, CRC(4878348c) SHA1(33bbfaba3edbf5a6c559a5d58ef54c46f390aa94) )
+	ROM_LOAD( "pakrat_pf_rom05_sewer_hi.bin", 0x54000, 0x4000, CRC(5120acbf) SHA1(a6fafcdbe4ecf8e21c61341f286fa7376c40fd0e) )
+	ROM_LOAD( "pakrat_pf_rom06_tree_hi.bin", 0x58000, 0x4000, CRC(ee1d37fe) SHA1(456b39fdc646be61cc986d96042b5e85615aec6d) )
+	ROM_LOAD( "pakrat_pf_rom07_tree_hi.bin", 0x5c000, 0x4000, CRC(72069eec) SHA1(b6386d6f480d96f7ad82a11bc9ef81afbcafb0a7) )
+	ROM_LOAD( "pakrat_pf_rom08_tree_hi.bin", 0x60000, 0x4000, CRC(919fb8c6) SHA1(035c637fcd8d8c73dbaccad08e2f857226983d8b) )
+	ROM_LOAD( "pakrat_pf_rom09_tree_hi.bin", 0x64000, 0x4000, CRC(c0a3d459) SHA1(90fca92ad271ad0587817791dd462e6a002c3d20) )
+	ROM_LOAD( "pakrat_pf_rom10_junk_hi.bin", 0x68000, 0x4000, CRC(6b76b890) SHA1(64985b9a825beb9242d6e928f515ddef564690a2) )
+	ROM_LOAD( "pakrat_pf_rom11_junk_hi.bin", 0x6c000, 0x4000, CRC(a163e848) SHA1(7fa9915c8af1b04028677b078a534802dd8f05c7) )
+
+	ROM_REGION( 0x80000, "mo", ROMREGION_ERASE00 )  // banks 0-9, LOW then HIG
+	ROM_LOAD( "pakrat_gfx_bank0_walk_lo.bin", 0x00000, 0x4000, CRC(357863e4) SHA1(3f82a98a8c12c2a306455a0926de500a54b06b3d) )
+	ROM_LOAD( "pakrat_gfx_bank1_actn0_lo.bin", 0x04000, 0x4000, CRC(4efe7e31) SHA1(ee5bf301df2b2cae08197d6636ceb5a0efe0ec78) )
+	ROM_LOAD( "pakrat_gfx_bank2_actn1_lo.bin", 0x08000, 0x4000, CRC(f0265530) SHA1(807b6f026ccf28e142fc9d2d0dec4052474965d4) )
+	ROM_LOAD( "pakrat_gfx_bank3_pakall_lo.bin", 0x0c000, 0x4000, CRC(8ad92683) SHA1(7c751122bf7d0c37d105dfbfb248484156fbda44) )
+	ROM_LOAD( "pakrat_gfx_bank4_tough_lo.bin", 0x10000, 0x4000, CRC(bd4d4421) SHA1(8b1d24b0a4654ac95bd8c7aa34570d3cfcdbef42) )
+	ROM_LOAD( "pakrat_gfx_bank5_buldog_lo.bin", 0x14000, 0x4000, CRC(660733fb) SHA1(2cbf521ec1c92a6c967681c081cd99c516ca74b9) )
+	ROM_LOAD( "pakrat_gfx_bank6_pakspi_lo.bin", 0x18000, 0x4000, CRC(1ddc4441) SHA1(62ce32aaa6559992fd48761b319963f89d62971b) )
+	ROM_LOAD( "pakrat_gfx_bank7_packrat_lo.bin", 0x1c000, 0x4000, CRC(2c9163e5) SHA1(5c921483ffb6c6597970a0569115e039b2cba662) )
+	ROM_LOAD( "pakrat_gfx_bank8_stooj_lo.bin", 0x20000, 0x4000, CRC(262c0f46) SHA1(4715b283967923f00b275339db59d4cdc1ed1627) )
+	ROM_LOAD( "pakrat_gfx_bank9_obj_lo.bin", 0x24000, 0x4000, CRC(2fc468e6) SHA1(a250228ee0e718148627abff22b39764e5e63cf2) )
+	ROM_LOAD( "pakrat_gfx_bank0_walk_hi.bin", 0x40000, 0x4000, CRC(5ddac992) SHA1(29a51eefd5025ae302ea7b58956fdcbc6364febc) )
+	ROM_LOAD( "pakrat_gfx_bank1_actn0_hi.bin", 0x44000, 0x4000, CRC(91dbf695) SHA1(e88aa92c19a720536a7e10a4217fafa6ad51a952) )
+	ROM_LOAD( "pakrat_gfx_bank2_actn1_hi.bin", 0x48000, 0x4000, CRC(a7863c21) SHA1(cb04aaf7c70fa7f5e1cd015f7a16c544ec863358) )
+	ROM_LOAD( "pakrat_gfx_bank3_pakall_hi.bin", 0x4c000, 0x4000, CRC(e97c800a) SHA1(b4f7c286a9a13841e60b5137650db72c6476fb09) )
+	ROM_LOAD( "pakrat_gfx_bank4_tough_hi.bin", 0x50000, 0x4000, CRC(7252b9a2) SHA1(f83d8bf1eb164954fc3d0c9b46302c196b96e6a2) )
+	ROM_LOAD( "pakrat_gfx_bank5_buldog_hi.bin", 0x54000, 0x4000, CRC(16546ef0) SHA1(2bc9e8d18c0794bf19f92327da2e820056aa5f4d) )
+	ROM_LOAD( "pakrat_gfx_bank6_pakspi_hi.bin", 0x58000, 0x4000, CRC(2a48381b) SHA1(1f0fb3645917113d73b0f82020943ba8de17c2ff) )
+	ROM_LOAD( "pakrat_gfx_bank7_packrat_hi.bin", 0x5c000, 0x4000, CRC(fb302123) SHA1(7a3991df73d94160a139c182d07be47652489dcc) )
+	ROM_LOAD( "pakrat_gfx_bank8_stooj_hi.bin", 0x60000, 0x4000, CRC(c0296f76) SHA1(9acec6fe873352f17a53846796f8d7057aceac78) )
+	ROM_LOAD( "pakrat_gfx_bank9_obj_hi.bin", 0x64000, 0x4000, CRC(83544432) SHA1(575c318357afffbf4bbfe64ecf6470d9bb88b47a) )
+ROM_END
+
 } // anonymous namespace
 
 
 GAME( 1984, peterpakt,  0,         peterpakt, peterpakt, peterpakt_state, empty_init, ROT0, "Atari, Inc.", "Peter Pack Rat (T11 prototype, Jun 01 1984)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
 GAME( 1984, peterpakta, peterpakt, peterpakt, peterpakt, peterpakt_state, empty_init, ROT0, "Atari, Inc.", "Peter Pack Rat (T11 prototype, May 11 1984)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
 GAME( 1984, peterpakts, peterpakt, peterpakt, peterpakt, peterpakt_state, empty_init, ROT0, "Atari, Inc.", "Peter Pack Rat (T11 prototype, rebuilt from source)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, peterpaktv, peterpakt, peterpakt, peterpakt, peterpakt_state, empty_init, ROT0, "Atari, Inc.", "Peter Pack Rat (T11 prototype, rebuilt from source, theme sung)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
