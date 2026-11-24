@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ken Van Mersbergen (Dutchman200)
+// copyright-holders:Ken Van Mersbergen (Dutchman2000)
 /***************************************************************************
 
     Peter Pack Rat - T11 prototype
@@ -52,6 +52,8 @@
 
     Sound CPU: 6502, 4 POKEYs, NVRAM ("4 pokeys and NVRAM run by
     seperate 6502", PR.MAC)
+    Sound clock 1.5 MHz (RPMDEF.MAC POKRATE, RPM.MAC note table "FOR 1.5 MHZ
+    POKEY CLOCK", SIO65 baud rate divisor)
 
     0000-0FFF  RAM
     1000-10FF  NVRAM
@@ -67,9 +69,23 @@
     3100       W: IRQ acknowledge (IRQ 4 times a frame, 240 Hz)
     3200       W: acknowledge byte from T11
     3300       W: byte to T11
-    3400-3407  W: output latches (coin counters, LEDs, speech control)
+    3400-3407  W: output latches, D7 (HOSDEF.MAC):
+                  3400 coin counter, 3403 T11 reset (0 = reset),
+                  3404 "T-11 error" LED, 3405 speech write strobe,
+                  3406 player 1 LED / SIO command, 3407 player 2 LED
     3500       W: speech data
     4000-FFFF  ROM
+
+    Data collection: the field test sound program (HOSDC.MAC, which
+    includes SIO65.MAC, "COIN-OP SERIAL I/O" by Eddie Babcock) writes a
+    32-byte record for every game played to an Atari 810/1050 disk drive
+    on the Atari 400/800 serial bus: POKEY 4 serial in/out, command line
+    on 3406 (shared with the player 1 LED). The "sio" slot is empty by
+    default. With -sio a1050 the drive firmware answers the program's
+    commands, but MAME's 810/1050 don't emulate the disk mechanism yet,
+    so reads end with 'E' (device error). The HLE drive (-sio fdc) has
+    disks but its replies are misread by the POKEY receiver at this
+    program's slightly slow baud rate.
 
     TI speech chip (TMS5220): the sound program is built with RPMTLK
     (...TLK = 1) and the vocabulary PRVOC.MAC is in the sound ROM at 7437
@@ -97,6 +113,11 @@
 
 #include "emu.h"
 
+#if __has_include("bus/a800/sio/a8sio.h")
+#include "bus/a800/sio/a8sio.h"
+#else
+#include "bus/a800/a8sio.h"     // MAME 0.289 and earlier
+#endif
 #include "cpu/m6502/m6502.h"
 #include "cpu/t11/t11.h"
 #include "machine/nvram.h"
@@ -123,6 +144,7 @@ public:
 		m_gfxdecode(*this, "gfxdecode"),
 		m_pokey(*this, "pokey%u", 0U),
 		m_tms(*this, "tms"),
+		m_sio(*this, "sio"),
 		m_rombank(*this, "rombank"),
 		m_cpram(*this, "cpram"),
 		m_pfram(*this, "pfram"),
@@ -130,7 +152,8 @@ public:
 		m_alpharam(*this, "alpharam"),
 		m_in0(*this, "IN0"),
 		m_in1(*this, "IN1"),
-		m_led(*this, "led0")
+		m_led(*this, "led0"),
+		m_soundled(*this, "led%u", 1U)
 	{ }
 
 	void peterpakt(machine_config &config) ATTR_COLD;
@@ -150,6 +173,7 @@ private:
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device_array<pokey_device, 4> m_pokey;
 	required_device<tms5220_device> m_tms;
+	required_device<a8sio_device> m_sio;
 	required_memory_bank m_rombank;
 	required_shared_ptr<u16> m_cpram;
 	required_shared_ptr<u16> m_pfram;
@@ -158,6 +182,7 @@ private:
 	required_ioport m_in0;
 	required_ioport m_in1;
 	output_finder<> m_led;
+	output_finder<3> m_soundled;
 
 	emu_timer *m_vblank_off_timer = nullptr;
 
@@ -355,11 +380,32 @@ void peterpakt_state::sound_irq_ack_w(u8 data)
 
 void peterpakt_state::sound_latch_w(offs_t offset, u8 data)
 {
-	// 3400-3407: coin counters, LEDs and speech control (D7 of each)
-	if (offset == 5)
-		m_tms->wsq_w(BIT(data, 7));     // SPWRON/SPWROF: 0 = write strobe on
-	else if (offset == 6 || offset == 7)
-		machine().bookkeeping().coin_counter_w(offset - 6, BIT(data, 7));
+	// 3400-3407, D7 of each (HOSDEF.MAC, RPMDEF.MAC)
+	const int state = BIT(data, 7);
+	switch (offset)
+	{
+		case 0:     // CC1LCH: coin counter
+			machine().bookkeeping().coin_counter_w(0, state);
+			break;
+		case 3:     // RSTLCH: T11 reset, 0 = reset (TSTART strobes it when the T11 stops talking)
+			m_maincpu->set_input_line(INPUT_LINE_RESET, state ? CLEAR_LINE : ASSERT_LINE);
+			break;
+		case 4:     // LEDLCH: "T-11 error" LED
+			m_soundled[0] = state;
+			break;
+		case 5:     // SPWRON/SPWROF: 0 = speech write strobe on
+			m_tms->wsq_w(state);
+			break;
+		case 6:     // PL1LCH: player 1 LED, also the SIO command line (DCCLCH, active low)
+			m_soundled[1] = state;
+			m_sio->command_w(state);
+			break;
+		case 7:     // PL2LCH: player 2 LED
+			m_soundled[2] = state;
+			break;
+		default:
+			break;
+	}
 }
 
 u8 peterpakt_state::quad_pokey_r(offs_t offset)
@@ -599,6 +645,9 @@ void peterpakt_state::machine_start()
 
 	m_palette->set_pen_color(1024, rgb_t::black());
 
+	// SIO pin 10 (computer ready): an 810/1050 only answers when it's high
+	m_sio->ready_w(1);
+
 	save_item(NAME(m_outlatch));
 	save_item(NAME(m_hscroll));
 	save_item(NAME(m_vscroll));
@@ -626,12 +675,16 @@ void peterpakt_state::peterpakt(machine_config &config)
 {
 	constexpr XTAL MASTER_CLOCK = 20_MHz_XTAL;
 	constexpr XTAL VIDEO_CLOCK = 14.318181_MHz_XTAL;
+	// RPMDEF.MAC: "POKRATE= 1500. ;KILOCYCLES PER SECOND (POKEY CLOCK)", and
+	// SIO65/HOSDC compute the 19200 baud divisor from 1500 kHz. The crystal
+	// isn't documented; 12 MHz / 8 gives exactly 1.5 MHz.
+	constexpr XTAL SOUND_CLOCK = 12_MHz_XTAL / 8;
 
 	T11(config, m_maincpu, MASTER_CLOCK / 2);
 	m_maincpu->set_initial_mode(0x36ff);    // start at 100000, as on System 2
 	m_maincpu->set_addrmap(AS_PROGRAM, &peterpakt_state::main_map);
 
-	M6502(config, m_audiocpu, VIDEO_CLOCK / 8);
+	M6502(config, m_audiocpu, SOUND_CLOCK);
 	m_audiocpu->set_addrmap(AS_PROGRAM, &peterpakt_state::sound_map);
 	TIMER(config, "soundirq").configure_periodic(FUNC(peterpakt_state::sound_irq), attotime::from_hz(240));
 
@@ -651,7 +704,7 @@ void peterpakt_state::peterpakt(machine_config &config)
 	SPEAKER(config, "mono").front_center();
 	for (int i = 0; i < 4; i++)
 	{
-		POKEY(config, m_pokey[i], VIDEO_CLOCK / 8);
+		POKEY(config, m_pokey[i], SOUND_CLOCK);
 		m_pokey[i]->add_route(ALL_OUTPUTS, "mono", 0.50);
 	}
 
@@ -660,6 +713,13 @@ void peterpakt_state::peterpakt(machine_config &config)
 	// 14.318 MHz / 2 / 11 Atari used for the TMS5220 on later boards.
 	TMS5220(config, m_tms, VIDEO_CLOCK / 2 / 11);
 	m_tms->add_route(ALL_OUTPUTS, "mono", 0.5);
+
+	// Atari 400/800 serial bus for the field test data collection drive
+	// (HOSDC.MAC, SIO65.MAC): POKEY 4 serial in/out, command line on 3406
+	A8SIO(config, m_sio, nullptr);
+	m_sio->data_in().set(m_pokey[3], FUNC(pokey_device::sid_w));
+	m_pokey[3]->sod_w().set(m_sio, FUNC(a8sio_device::data_out_w));
+	m_pokey[3]->oclk_w().set(m_sio, FUNC(a8sio_device::clock_out_w));
 }
 
 

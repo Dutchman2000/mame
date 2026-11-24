@@ -10,7 +10,7 @@
     from the original VAX development files ([LOGG.RUNNER]): the program
     sources (RRDEF.MAC holds the hardware equates), the hardware memo
     SPEC.DOC, the priority PROM equations PRIOR.ROM, and the linked load
-    (.LDA) files.  At least 3 PCBs are known to exist, but they have not been documented
+    (.LDA) files.  At least 3 PCBs are known to exist, but the have not been documented
     so ROM chip placement and some video timing details are educated guesses.  
     The program/sound ROM images are the archived LDA files cut into 27128-sized pieces.
 
@@ -111,6 +111,7 @@ public:
 	void init_dev() ATTR_COLD;
 	void init_nodisk() ATTR_COLD;   // also used by the rebuilt final set
 	void init_dev84() ATTR_COLD;
+	void init_final84() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -1188,6 +1189,24 @@ ROM_START( roadrunld84 )
 	ROADRUNLD_DISC
 ROM_END
 
+// rebuild of the 05-NOV-1984 source ([LOGG.RUNNER.OLD]) as a "final program"
+// (DEBUG=0): real IRQ vector, ROM test checksums filled in; sound is
+// AUDIO3.LDA with a real IRQ vector and its ROM test bytes filled in
+ROM_START( roadrunld84f )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "roadrunld84f_4000.bin", 0x4000, 0x4000, CRC(d049a22f) SHA1(f53beaf75750715822d2a9834fb97527e01bcaee) )
+	ROM_LOAD( "roadrunld84f_8000.bin", 0x8000, 0x4000, CRC(6a1c03bb) SHA1(af64ad8226c4ba5cd9d96e569176993aecf22beb) )
+	ROM_LOAD( "roadrunld84f_c000.bin", 0xc000, 0x4000, CRC(4d85f39b) SHA1(520dfd7e341729a0886164ec6c6a5ba2f08e06ee) )
+
+	ROM_REGION( 0x10000, "audiocpu", 0 )
+	ROM_LOAD( "roadrunld84f_snd_8000.bin", 0x8000, 0x4000, CRC(d2ad3b10) SHA1(9e9b9bc4e4bc579a97c252a2dbb01cf116449362) )
+	ROM_LOAD( "roadrunld84f_snd_c000.bin", 0xc000, 0x4000, CRC(42c85ab9) SHA1(268efc5dc4e43a14631a95905038e6981eec7c5a) )
+
+	ROADRUNLD_GFX
+	ROADRUNLD_PF84
+	ROADRUNLD_DISC
+ROM_END
+
 // RR2.LDA 09-OCT-1984, AUDIO2.LDA 09-OCT-1984
 ROM_START( roadrunld84b )
 	ROM_REGION( 0x10000, "maincpu", 0 )
@@ -1239,13 +1258,20 @@ void roadrunld_state::init_dev84()
 	m_main_uint_vector = true;
 }
 
+void roadrunld_state::init_final84()
+{
+	m_hw84 = true;
+	m_main_uint_vector = false;
+}
+
 } // anonymous namespace
 
 
-GAME( 1985, roadrunld,    0,         roadrunld,        roadrunld, roadrunld_state, init_dev,    ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1985, roadrunlda,   roadrunld, roadrunld,        roadrunld, roadrunld_state, init_dev,    ROT0, "Atari Games", "Road Runner (prototype, 06-MAR-1985, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1985, roadrunldf,   roadrunld, roadrunld,        roadrunld, roadrunld_state, init_nodisk, ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985 source, final-build rebuild, laserdisc)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1985, roadrunldnd,  roadrunld, roadrunld_nodisc, roadrunld, roadrunld_state, init_nodisk, ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985 source, no-laserdisc rebuild)",           MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, roadrunld84,  roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,  ROT0, "Atari, Inc.", "Road Runner (prototype, 05-NOV-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, roadrunld84b, roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,  ROT0, "Atari, Inc.", "Road Runner (prototype, 09-OCT-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, roadrunld84a, roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,  ROT0, "Atari, Inc.", "Road Runner (prototype, 03-OCT-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1985, roadrunld,    0,         roadrunld,        roadrunld, roadrunld_state, init_dev,     ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1985, roadrunlda,   roadrunld, roadrunld,        roadrunld, roadrunld_state, init_dev,     ROT0, "Atari Games", "Road Runner (prototype, 06-MAR-1985, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1985, roadrunldf,   roadrunld, roadrunld,        roadrunld, roadrunld_state, init_nodisk,  ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985 source, final-build rebuild, laserdisc)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1985, roadrunldnd,  roadrunld, roadrunld_nodisc, roadrunld, roadrunld_state, init_nodisk,  ROT0, "Atari Games", "Road Runner (prototype, 05-MAR-1985 source, no-laserdisc rebuild)",           MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, roadrunld84,  roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,   ROT0, "Atari, Inc.", "Road Runner (prototype, 05-NOV-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, roadrunld84f, roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_final84, ROT0, "Atari, Inc.", "Road Runner (prototype, 05-NOV-1984 source, final-build rebuild, laserdisc)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, roadrunld84b, roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,   ROT0, "Atari, Inc.", "Road Runner (prototype, 09-OCT-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, roadrunld84a, roadrunld, roadrunld84,      roadrunld, roadrunld_state, init_dev84,   ROT0, "Atari, Inc.", "Road Runner (prototype, 03-OCT-1984, laserdisc)",                             MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
